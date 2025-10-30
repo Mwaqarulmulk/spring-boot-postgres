@@ -1,0 +1,79 @@
+services:
+  # PostgreSQL Database Service
+  db:
+    image: postgres:15-alpine
+    container_name: postgres-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - springboot-postgres-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d testdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Spring Boot Application Service
+  app:
+    build:
+      context: ./bezkoder-app
+      dockerfile: Dockerfile
+    container_name: springboot-app
+    restart: on-failure
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/testdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: org.hibernate.dialect.PostgreSQLDialect
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "true"
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: "true"
+      SERVER_PORT: "8080"
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK: INFO
+      LOGGING_LEVEL_COM_BEZKODER: DEBUG
+    ports:
+      - "8080:8080"
+    networks:
+      - springboot-postgres-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/actuator/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    stdin_open: true
+    tty: true
+
+# Define named volumes for data persistence
+volumes:
+  postgres_data:
+    driver: local
+    name: springboot_postgres_data
+
+# Define networks for container communication
+networks:
+  springboot-postgres-network:
+    driver: bridge
+    name: springboot-postgres-network
